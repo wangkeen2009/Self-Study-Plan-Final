@@ -21,34 +21,21 @@
         - Status Colors: Not Started (Gray), In Progress (Cyan), Completed (Yellow)
     -->
     <!-- 
-    Application Structure Plan: The application is structured as a Single-Page Application (SPA) with three distinct, switchable views: "首頁" (Home), "學習規劃" (Learning Plan), and "任務追蹤" (Task Tracking). This task-oriented design is chosen for usability, separating the high-level introduction from the detailed curriculum and progress monitoring.
-        - The "Home" view acts as a welcome and summary page.
-        - The "Learning Plan" view uses a master-detail layout (a side navigation list of weeks and a main content area), which is the most intuitive way to explore and interact with a structured, multi-step curriculum like this one.
-        - The "Task Tracking" view functions as a dashboard, providing a quick visual overview (Donut Chart) and a filterable list of tasks, allowing the user to easily gauge their progress.
-    This structure avoids a long, overwhelming single page and provides a focused experience for each user task.
+    Application Structure Plan: The application is structured as a Single-Page Application (SPA) with four distinct, switchable views: "首頁" (Home), "學習規劃" (Learning Plan), "任務追蹤" (Task Tracking), and "登入" (Login). This task-oriented design is chosen for usability. An admin login system is added to control write access to the data.
+        - The "Home", "Learning Plan", and "Task Tracking" views function as before.
+        - The "Login" view provides a dedicated interface for admin authentication.
+        - The status dropdown in the "Learning Plan" is now conditionally rendered based on the user's auth state, separating read access (for public) from write access (for admin).
+    This structure maintains the focused user experience while adding a necessary layer of security and management.
     -->
     <!-- 
     Visualization & Content Choices: 
-        - Report Info: Overall project progress status (Not Started, In Progress, Completed).
-          - Goal: Inform (at a glance).
-          - Viz/Presentation: Donut Chart.
-          - Interaction: None (display only, updates automatically).
-          - Justification: Best visualization for showing part-to-whole relationships clearly.
-          - Library/Method: Chart.js on a <canvas> element.
-
-        - Report Info: Detailed weekly learning content (text, lists, code snippets).
-          - Goal: Organize & Inform.
-          - Viz/Presentation: Master-Detail Layout (Vertical navigation list + Main content pane).
-          - Interaction: Click to select a week; Dropdown to change the status of the selected week, now persistent via Supabase.
-          - Justification: A standard and highly effective pattern for navigating hierarchical or sequential content. Allows focus on one item at a time while maintaining context.
-          - Library/Method: Dynamic HTML rendering with Vanilla JS, styled with Tailwind CSS, data fetched from Supabase.
-
-        - Report Info: List of all learning tasks.
-          - Goal: Organize & Compare.
-          - Viz/Presentation: Grid of interactive "Task Cards".
-          - Interaction: Filter buttons (All, Not Started, In Progress, Completed). Clicking a card now navigates to its detail view.
-          - Justification: Cards provide a scannable, visually distinct unit for each task. Filtering empowers the user to focus on what matters to them (e.g., "what's next?").
-          - Library/Method: Dynamic HTML rendering with Vanilla JS, styled with Tailwind CSS.
+        - Report Info: Weekly learning content status dropdown.
+          - Goal: Organize & Manage.
+          - Viz/Presentation: Conditionally rendered HTML <select> dropdown.
+          - Interaction: The dropdown is only visible and interactive for authenticated admin users. For public users, a read-only text span is shown instead. This change is managed by the application's auth state.
+          - Justification: This is a critical security and data integrity feature, preventing unauthorized changes while still allowing public viewing of the progress.
+          - Library/Method: Vanilla JS state check (`App.state.user`) to conditionally render different HTML, powered by Supabase Auth.
+        - All other visualizations and content choices remain the same as the previous version.
     -->
     <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
     <style>
@@ -93,6 +80,8 @@
                             <button data-view="home" class="nav-link text-gray-300 hover:text-cyan-400 px-3 py-2 rounded-md text-sm font-medium">首頁</button>
                             <button data-view="plan" class="nav-link text-gray-300 hover:text-cyan-400 px-3 py-2 rounded-md text-sm font-medium">學習規劃</button>
                             <button data-view="tracker" class="nav-link text-gray-300 hover:text-cyan-400 px-3 py-2 rounded-md text-sm font-medium">任務追蹤</button>
+                            <button data-view="login" id="login-nav-btn" class="nav-link bg-slate-800 hover:bg-slate-700 text-gray-300 hover:text-cyan-400 px-3 py-2 rounded-md text-sm font-medium">管理員登入</button>
+                            <button id="logout-nav-btn" class="hidden bg-red-800 hover:bg-red-700 text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium">登出</button>
                         </div>
                     </div>
                     <div class="md:hidden">
@@ -108,6 +97,8 @@
                     <button data-view="home" class="nav-link text-gray-300 hover:text-cyan-400 block px-3 py-2 rounded-md text-base font-medium w-full text-left">首頁</button>
                     <button data-view="plan" class="nav-link text-gray-300 hover:text-cyan-400 block px-3 py-2 rounded-md text-base font-medium w-full text-left">學習規劃</button>
                     <button data-view="tracker" class="nav-link text-gray-300 hover:text-cyan-400 block px-3 py-2 rounded-md text-base font-medium w-full text-left">任務追蹤</button>
+                    <button data-view="login" id="login-mobile-btn" class="nav-link text-gray-300 hover:text-cyan-400 block px-3 py-2 rounded-md text-base font-medium w-full text-left">管理員登入</button>
+                    <button id="logout-mobile-btn" class="hidden text-gray-300 hover:text-white block px-3 py-2 rounded-md text-base font-medium w-full text-left bg-red-800">登出</button>
                 </div>
             </div>
         </header>
@@ -170,6 +161,27 @@
                 </div>
             </section>
 
+            <!-- Login View -->
+            <section id="view-login" class="view-container hidden">
+                 <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-16">
+                    <div class="max-w-md mx-auto glass-pane rounded-lg p-8">
+                        <h2 class="text-3xl font-bold text-center mb-6 text-cyan-400">管理員登入</h2>
+                        <form id="login-form">
+                            <div class="mb-4">
+                                <label for="username" class="block text-slate-300 text-sm font-bold mb-2">使用者名稱</label>
+                                <input type="text" id="username" value="madmacwang" class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            </div>
+                            <div class="mb-6">
+                                <label for="password" class="block text-slate-300 text-sm font-bold mb-2">密碼</label>
+                                <input type="password" id="password" value="madmac5233" class="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-white focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                            </div>
+                            <button type="submit" class="w-full bg-cyan-500 text-white font-bold py-3 px-4 rounded-full text-lg glow-button">登入</button>
+                            <p id="login-error" class="text-red-400 text-center mt-4 h-4"></p>
+                        </form>
+                    </div>
+                 </div>
+            </section>
+
             <!-- Error View -->
             <section id="view-error" class="view-container hidden">
                 <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-16">
@@ -194,8 +206,9 @@ const App = {
     data: [],
     state: {
         currentView: 'home',
-        selectedPlanId: null, // Default to null, will be set after fetch
+        selectedPlanId: null, 
         loading: true,
+        user: null,
     },
     
     async init() {
@@ -207,6 +220,15 @@ const App = {
         }
         
         this.supabase = supabase.createClient(this.supabaseUrl, this.supabaseKey);
+        
+        const { data: { session } } = await this.supabase.auth.getSession();
+        this.state.user = session?.user ?? null;
+        
+        this.supabase.auth.onAuthStateChange((event, session) => {
+            this.state.user = session?.user ?? null;
+            this.render();
+        });
+
         this.addEventListeners();
         await this.fetchData();
         this.render();
@@ -228,7 +250,12 @@ const App = {
         }
         
         this.data = data;
-        if(this.data.length > 0 && !this.state.selectedPlanId) {
+        if(this.data.length === 0) {
+             this.handleFetchError({ code: '42P01', message: '資料表 learning_plan 是空的。' });
+             return;
+        }
+
+        if(!this.state.selectedPlanId) {
             this.state.selectedPlanId = this.data[0].id;
         }
         this.state.loading = false;
@@ -240,7 +267,7 @@ const App = {
         this.state.currentView = 'error';
 
         const errorEl = document.getElementById('error-message');
-        if (error.code === '42P01') { // "undefined_table" error code
+        if (error.code === '42P01') { 
             errorEl.innerHTML = `
                 <p class="text-lg mb-4"><strong>步驟 1: 建立資料表</strong></p>
                 <p class="mb-4">您的 Supabase 資料庫中缺少了 <code>learning_plan</code> 資料表。請前往您 Supabase 專案中的 <strong>SQL Editor</strong>，並執行以下指令來建立它：</p>
@@ -666,7 +693,54 @@ const App = {
                 this.render();
             }
         });
+
+        document.getElementById('login-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleLogin();
+        });
+
+        document.getElementById('logout-nav-btn').addEventListener('click', () => this.handleLogout());
+        document.getElementById('logout-mobile-btn').addEventListener('click', () => this.handleLogout());
+
+        document.getElementById('login-nav-btn').addEventListener('click', () => {
+            this.state.currentView = 'login';
+            this.render();
+        });
+        document.getElementById('login-mobile-btn').addEventListener('click', () => {
+            this.state.currentView = 'login';
+            this.render();
+        });
     },
+
+    async handleLogin() {
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        const errorEl = document.getElementById('login-error');
+        errorEl.textContent = '';
+
+        // Supabase uses email for authentication. We'll map the username to an email format.
+        const email = `${username}@example.com`;
+
+        const { error } = await this.supabase.auth.signInWithPassword({
+            email: email,
+            password: password,
+        });
+
+        if (error) {
+            console.error('Login error:', error);
+            errorEl.textContent = '登入失敗，請檢查您的帳號或密碼。';
+        } else {
+            this.state.currentView = 'plan'; // Redirect to a different view on successful login
+            this.render();
+        }
+    },
+
+    async handleLogout() {
+        await this.supabase.auth.signOut();
+        this.state.currentView = 'home';
+        this.render();
+    },
+
 
     render() {
         document.querySelectorAll('.view-container').forEach(el => el.classList.add('hidden'));
@@ -678,9 +752,18 @@ const App = {
 
         document.getElementById(`view-${this.state.currentView}`).classList.remove('hidden');
 
+        // Update Nav link active state
         document.querySelectorAll('.nav-link').forEach(el => {
              el.classList.toggle('active', el.dataset.view === this.state.currentView);
         });
+
+        // Toggle Login/Logout buttons
+        const isLoggedIn = !!this.state.user;
+        document.getElementById('login-nav-btn').classList.toggle('hidden', isLoggedIn);
+        document.getElementById('login-mobile-btn').classList.toggle('hidden', isLoggedIn);
+        document.getElementById('logout-nav-btn').classList.toggle('hidden', !isLoggedIn);
+        document.getElementById('logout-mobile-btn').classList.toggle('hidden', !isLoggedIn);
+
 
         if(document.getElementById('mobile-menu')?.classList.contains('block')) {
             document.getElementById('mobile-menu').classList.add('hidden');
@@ -741,9 +824,10 @@ const App = {
 
         const formattedContent = this.formatContent(item.content);
 
-        contentEl.innerHTML = `
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <h2 class="text-2xl font-bold text-cyan-400">${item.title}</h2>
+        let statusDisplay = '';
+        if (this.state.user) {
+            // Admin is logged in, show the dropdown
+            statusDisplay = `
                 <div class="flex items-center gap-2 flex-shrink-0">
                     <label for="status-select" class="text-sm font-medium text-gray-400">狀態:</label>
                     <select id="status-select" data-id="${item.id}" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-cyan-500 focus:border-cyan-500 block w-full p-2">
@@ -752,26 +836,49 @@ const App = {
                         <option value="已完成" ${item.status === '已完成' ? 'selected' : ''}>已完成</option>
                     </select>
                 </div>
+            `;
+        } else {
+            // User is not logged in, show read-only status
+            const statusStyles = {
+                '未開始': 'bg-gray-700 text-gray-300',
+                '進行中': 'bg-cyan-800 text-cyan-200',
+                '已完成': 'bg-yellow-800 text-yellow-200',
+            };
+            statusDisplay = `
+                <div class="flex items-center gap-2 flex-shrink-0">
+                    <span class="text-sm font-medium text-gray-400">狀態:</span>
+                    <span class="text-sm font-semibold px-3 py-1 rounded-full ${statusStyles[item.status] || ''}">${item.status}</span>
+                </div>
+            `;
+        }
+
+
+        contentEl.innerHTML = `
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                <h2 class="text-2xl font-bold text-cyan-400">${item.title}</h2>
+                ${statusDisplay}
             </div>
             <div class="content-prose">${formattedContent}</div>
         `;
 
-        document.getElementById('status-select').addEventListener('change', async (e) => {
-            const selectedId = parseInt(e.target.dataset.id);
-            const newStatus = e.target.value;
-            
-            const { error } = await this.supabase
-                .from('learning_plan')
-                .update({ status: newStatus })
-                .eq('id', selectedId);
+        if (this.state.user) {
+            document.getElementById('status-select').addEventListener('change', async (e) => {
+                const selectedId = parseInt(e.target.dataset.id);
+                const newStatus = e.target.value;
+                
+                const { error } = await this.supabase
+                    .from('learning_plan')
+                    .update({ status: newStatus })
+                    .eq('id', selectedId);
 
-            if (error) {
-                console.error('Error updating status:', error);
-            } else {
-                const dataItem = this.data.find(d => d.id === selectedId);
-                if (dataItem) dataItem.status = newStatus;
-            }
-        });
+                if (error) {
+                    console.error('Error updating status:', error);
+                } else {
+                    const dataItem = this.data.find(d => d.id === selectedId);
+                    if (dataItem) dataItem.status = newStatus;
+                }
+            });
+        }
     },
 
     formatContent(md) {
@@ -965,4 +1072,4 @@ document.addEventListener('DOMContentLoaded', () => App.init());
 </script>
 
 </body>
-</ht
+</html>
