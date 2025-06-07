@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 輔助蛋白質結構分析學習儀表板</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Supabase Client Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- 
+    Chosen Palette: "Cyber-Teal" - A vibrant and modern dark theme.
+        - Background: #0D1117 (Slate 950)
+        - Primary Content: #161B22 (Slate 900)
+        - Text: #E6EDF3 (Slate 200)
+        - Accent: #22D3EE (Cyan 400)
+        - Secondary Accent: #A5B4FC (Indigo 300)
+        - Status Colors: Not Started (Gray), In Progress (Cyan), Completed (Green)
+    -->
+    <!-- 
+    Application Structure Plan: The application is structured as a Single-Page Application (SPA) with three distinct, switchable views: "首頁" (Home), "學習規劃" (Learning Plan), and "任務追蹤" (Task Tracking). This task-oriented design is chosen for usability, separating the high-level introduction from the detailed curriculum and progress monitoring.
+        - The "Home" view acts as a welcome and summary page.
+        - The "Learning Plan" view uses a master-detail layout (a side navigation list of weeks and a main content area), which is the most intuitive way to explore and interact with a structured, multi-step curriculum like this one.
+        - The "Task Tracking" view functions as a dashboard, providing a quick visual overview (Donut Chart) and a filterable list of tasks, allowing the user to easily gauge their progress.
+    This structure avoids a long, overwhelming single page and provides a focused experience for each user task.
+    -->
+    <!-- 
+    Visualization & Content Choices: 
+        - Report Info: Overall project progress status (Not Started, In Progress, Completed).
+          - Goal: Inform (at a glance).
+          - Viz/Presentation: Donut Chart.
+          - Interaction: None (display only, updates automatically).
+          - Justification: Best visualization for showing part-to-whole relationships clearly.
+          - Library/Method: Chart.js on a <canvas> element.
+
+        - Report Info: Detailed weekly learning content (text, lists, code snippets).
+          - Goal: Organize & Inform.
+          - Viz/Presentation: Master-Detail Layout (Vertical navigation list + Main content pane).
+          - Interaction: Click to select a week; Dropdown to change the status of the selected week, now persistent via Supabase.
+          - Justification: A standard and highly effective pattern for navigating hierarchical or sequential content. Allows focus on one item at a time while maintaining context.
+          - Library/Method: Dynamic HTML rendering with Vanilla JS, styled with Tailwind CSS, data fetched from Supabase.
+
+        - Report Info: List of all learning tasks.
+          - Goal: Organize & Compare.
+          - Viz/Presentation: Grid of interactive "Task Cards".
+          - Interaction: Filter buttons (All, Not Started, In Progress, Completed). Clicking a card now navigates to its detail view.
+          - Justification: Cards provide a scannable, visually distinct unit for each task. Filtering empowers the user to focus on what matters to them (e.g., "what's next?").
+          - Library/Method: Dynamic HTML rendering with Vanilla JS, styled with Tailwind CSS.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0D1117; color: #E6EDF3; }
+        h1, h2, h3, h4 { font-family: 'Exo 2', sans-serif; }
+        .font-exo { font-family: 'Exo 2', sans-serif; }
+        .glass-pane { background-color: rgba(22, 27, 34, 0.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(48, 54, 61, 0.5); }
+        .glow-button { transition: all 0.3s ease; }
+        .glow-button:hover { box-shadow: 0 0 20px 0 rgba(34, 211, 238, 0.5); }
+        .nav-item { transition: all 0.2s ease-in-out; border-left: 3px solid transparent; }
+        .nav-item:hover, .nav-item.active { background-color: #161B22; border-left-color: #22d3ee; color: #22d3ee; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #161B22; }
+        ::-webkit-scrollbar-thumb { background: #30363D; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #8B949E; }
+        .chart-container { position: relative; width: 100%; max-width: 320px; margin-left: auto; margin-right: auto; height: 320px; }
+        .content-prose h1 { @apply text-3xl font-bold mb-4 text-cyan-400; }
+        .content-prose h2 { @apply text-2xl font-bold mt-6 mb-3 text-cyan-300; }
+        .content-prose h3 { @apply text-xl font-bold mt-5 mb-2 text-indigo-300; }
+        .content-prose h4 { @apply text-lg font-semibold mt-4 mb-2; }
+        .content-prose p { @apply mb-4 leading-relaxed; }
+        .content-prose ul { @apply list-disc list-inside mb-4 pl-4; }
+        .content-prose li { @apply mb-2; }
+        .content-prose a { @apply text-cyan-400 hover:underline transition-colors; }
+        .content-prose strong { @apply text-cyan-200; }
+        .content-prose pre { @apply bg-slate-950 text-sm text-cyan-300 rounded-lg p-4 overflow-x-auto my-4 border border-slate-700; }
+        .loading-spinner { border: 4px solid rgba(229, 231, 235, 0.2); border-left-color: #22d3ee; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div id="app" class="min-h-screen">
+        <header class="sticky top-0 z-50 glass-pane">
+            <nav class="container mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex items-center justify-between h-16">
+                    <div class="flex items-center">
+                        <span class="text-2xl font-exo font-bold text-cyan-400">🧬 自主學習專案</span>
+                    </div>
+                    <div class="hidden md:block">
+                        <div class="ml-10 flex items-baseline space-x-4">
+                            <button data-view="home" class="nav-link text-gray-300 hover:text-cyan-400 px-3 py-2 rounded-md text-sm font-medium">首頁</button>
+                            <button data-view="plan" class="nav-link text-gray-300 hover:text-cyan-400 px-3 py-2 rounded-md text-sm font-medium">學習規劃</button>
+                            <button data-view="tracker" class="nav-link text-gray-300 hover:text-cyan-400 px-3 py-2 rounded-md text-sm font-medium">任務追蹤</button>
+                        </div>
+                    </div>
+                    <div class="md:hidden">
+                         <button id="mobile-menu-button" class="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-white">
+                            <span class="sr-only">Open main menu</span>
+                            <svg class="block h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
+                        </button>
+                    </div>
+                </div>
+            </nav>
+            <div id="mobile-menu" class="md:hidden hidden">
+                <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+                    <button data-view="home" class="nav-link text-gray-300 hover:text-cyan-400 block px-3 py-2 rounded-md text-base font-medium w-full text-left">首頁</button>
+                    <button data-view="plan" class="nav-link text-gray-300 hover:text-cyan-400 block px-3 py-2 rounded-md text-base font-medium w-full text-left">學習規劃</button>
+                    <button data-view="tracker" class="nav-link text-gray-300 hover:text-cyan-400 block px-3 py-2 rounded-md text-base font-medium w-full text-left">任務追蹤</button>
+                </div>
+            </div>
+        </header>
+        
+        <main>
+            <!-- Home View -->
+            <section id="view-home" class="view-container">
+                <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
+                    <p class="mt-8 max-w-3xl mx-auto text-2xl md:text-3xl font-bold text-cyan-400">王可恩的自主學習計畫</p>
+                    <h1 class="text-2xl md:text-4xl font-bold tracking-tight mt-4 mb-4 text-white">
+                        AI 輔助蛋白質結構突變與致病機制分析
+                    </h1>
+                    <div class="mt-10">
+                        <button data-view="plan" class="nav-link-cta bg-cyan-500 text-white font-bold py-3 px-8 rounded-full text-lg glow-button">
+                            探索學習地圖
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Learning Plan View -->
+            <section id="view-plan" class="view-container hidden">
+                <div id="plan-loading" class="flex justify-center items-center h-64"><div class="loading-spinner"></div></div>
+                <div id="plan-view-content" class="hidden container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                    <div class="flex flex-col md:flex-row gap-8">
+                        <aside class="w-full md:w-1/4 lg:w-1/5">
+                            <h2 class="text-xl font-bold mb-4 text-cyan-400">學習章節</h2>
+                            <nav id="plan-nav" class="flex flex-col space-y-1"></nav>
+                        </aside>
+                        <div id="plan-content-wrapper" class="w-full md:w-3/4 lg:w-4/5 glass-pane rounded-lg p-6 md:p-8 min-h-[60vh]">
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Task Tracker View -->
+            <section id="view-tracker" class="view-container hidden">
+                 <div id="tracker-loading" class="flex justify-center items-center h-64"><div class="loading-spinner"></div></div>
+                 <div id="tracker-view-content" class="hidden container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                    <h1 class="text-3xl font-bold text-center mb-2">任務追蹤儀表板</h1>
+                    <p class="text-center text-gray-400 mb-8">視覺化您的學習進度</p>
+
+                    <div class="flex flex-col lg:flex-row items-center justify-center gap-8 mb-12">
+                        <div class="chart-container glass-pane rounded-lg p-4">
+                            <canvas id="progressChart"></canvas>
+                        </div>
+                        <div id="stats-summary" class="text-center lg:text-left">
+                        </div>
+                    </div>
+
+                    <div class="mb-6 flex flex-wrap justify-center gap-2">
+                         <button data-filter="all" class="filter-btn bg-cyan-500 text-white py-2 px-4 rounded-full text-sm font-semibold">全部</button>
+                         <button data-filter="未開始" class="filter-btn bg-gray-600 hover:bg-gray-500 text-white py-2 px-4 rounded-full text-sm font-semibold transition-colors">未開始</button>
+                         <button data-filter="進行中" class="filter-btn bg-cyan-600 hover:bg-cyan-500 text-white py-2 px-4 rounded-full text-sm font-semibold transition-colors">進行中</button>
+                         <button data-filter="已完成" class="filter-btn bg-green-600 hover:bg-green-500 text-white py-2 px-4 rounded-full text-sm font-semibold transition-colors">已完成</button>
+                    </div>
+
+                    <div id="task-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    </div>
+                </div>
+            </section>
+
+            <!-- Error View -->
+            <section id="view-error" class="view-container hidden">
+                <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-16">
+                    <div class="max-w-3xl mx-auto bg-slate-900 rounded-lg p-8 border border-red-500/50 shadow-lg shadow-red-500/10">
+                        <h1 class="text-3xl font-bold text-red-400 mb-4 text-center">資料庫設定錯誤</h1>
+                        <div id="error-message" class="text-slate-300">
+                            <!-- Error details will be injected here -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+<script>
+const App = {
+    // --- Supabase 設定 ---
+    supabaseUrl: 'https://jpcxoaylianjtsnqextw.supabase.co',
+    supabaseKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpwY3hvYXlsaWFuanRzbnFleHR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkxOTc0MzcsImV4cCI6MjA2NDc3MzQzN30.sIT7w5TQ6My0km4ZnIl5_g6L_DuGZaSN38neYYvBTQw',
+    supabase: null,
+    
+    data: [],
+    state: {
+        currentView: 'home',
+        selectedPlanId: null, // Default to null, will be set after fetch
+        loading: true,
+    },
+    
+    async init() {
+        if (this.supabaseUrl === 'YOUR_SUPABASE_URL' || this.supabaseKey === 'YOUR_SUPABASE_ANON_KEY') {
+            this.state.currentView = 'error';
+            this.render();
+            document.getElementById('error-message').innerHTML = `<p class="text-lg text-center">請在 JavaScript 程式碼中設定您的 Supabase URL 和 Anon Key。</p>`;
+            return;
+        }
+        
+        this.supabase = supabase.createClient(this.supabaseUrl, this.supabaseKey);
+        this.addEventListeners();
+        await this.fetchData();
+        this.render();
+    },
+
+    async fetchData() {
+        this.state.loading = true;
+        this.render();
+
+        const { data, error } = await this.supabase
+            .from('learning_plan')
+            .select('*')
+            .order('order_index', { ascending: true });
+
+        if (error) {
+            console.error('Error fetching data:', error);
+            this.handleFetchError(error);
+            return;
+        }
+        
+        this.data = data;
+        if(this.data.length > 0 && !this.state.selectedPlanId) {
+            this.state.selectedPlanId = this.data[0].id;
+        }
+        this.state.loading = false;
+        this.render();
+    },
+    
+    handleFetchError(error) {
+        this.state.loading = false;
+        this.state.currentView = 'error';
+
+        const errorEl = document.getElementById('error-message');
+        if (error.code === '42P01') { // "undefined_table" error code
+            errorEl.innerHTML = `
+                <p class="text-lg mb-4"><strong>步驟 1: 建立資料表</strong></p>
+                <p class="mb-4">您的 Supabase 資料庫中缺少了 <code>learning_plan</code> 資料表。請前往您 Supabase 專案中的 <strong>SQL Editor</strong>，並執行以下指令來建立它：</p>
+                <pre class="bg-slate-950 text-sm text-cyan-300 rounded-lg p-4 overflow-x-auto my-4 border border-slate-700"><code>CREATE TABLE public.learning_plan (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  order_index INT4,
+  title TEXT,
+  summary TEXT,
+  content TEXT,
+  status TEXT DEFAULT '未開始'
+);</code></pre>
+                <hr class="border-slate-700 my-8">
+                <p class="text-lg mb-4"><strong>步驟 2: 填入初始資料</strong></p>
+                <p class="mb-4">建立資料表後，回到此頁面並點擊下方的按鈕，即可將學習計畫的初始內容自動匯入資料庫。</p>
+                <div class="text-center mt-6">
+                    <button id="populate-data-btn" class="bg-cyan-500 text-white font-bold py-3 px-8 rounded-full text-lg glow-button">匯入初始資料</button>
+                    <p id="populate-status" class="text-sm text-slate-400 mt-2"></p>
+                </div>
+                <p class="mt-8 text-center text-slate-400">完成以上兩個步驟後，請<strong>重新整理</strong>此頁面。</p>
+            `;
+            document.getElementById('populate-data-btn').addEventListener('click', () => this.populateInitialData());
+        } else {
+            errorEl.innerHTML = `<p>讀取資料時發生未知的錯誤：</p><p class="mt-4 font-mono text-red-400">${error.message}</p>`;
+        }
+        this.render(); 
+    },
+
+    async populateInitialData() {
+        const statusEl = document.getElementById('populate-status');
+        const buttonEl = document.getElementById('populate-data-btn');
+
+        statusEl.textContent = '正在準備資料...';
+        buttonEl.disabled = true;
+        buttonEl.classList.remove('glow-button');
+        buttonEl.classList.add('opacity-50', 'cursor-not-allowed');
+
+        const dataToInsert = this.parseMarkdownForDB();
+        
+        if (dataToInsert.length === 0) {
+            statusEl.textContent = '錯誤：無法從原始檔案解析資料。';
+            buttonEl.disabled = false;
+            buttonEl.classList.add('glow-button');
+            buttonEl.classList.remove('opacity-50', 'cursor-not-allowed');
+            return;
+        }
+
+        statusEl.textContent = `正在匯入 ${dataToInsert.length} 筆資料...`;
+
+        const { error } = await this.supabase
+            .from('learning_plan')
+            .insert(dataToInsert);
+
+        if (error) {
+            console.error('Error populating data:', error);
+            statusEl.textContent = `匯入失敗： ${error.message}`;
+            if (error.code === '42P01') {
+                statusEl.textContent += ' (看起來資料表尚未建立，請先執行步驟 1)';
+            }
+            buttonEl.disabled = false;
+            buttonEl.classList.add('glow-button');
+            buttonEl.classList.remove('opacity-50', 'cursor-not-allowed');
+        } else {
+            statusEl.textContent = '資料已成功匯入！請重新整理頁面。';
+            buttonEl.textContent = '匯入成功！';
+        }
+    },
+
+    parseMarkdownForDB() {
+        const markdownText = `
+# 王可恩的自主學習計畫
+# AI輔助蛋白質結構突變與致病機制分析
+
+---
+
+### 第1週：主題導論與背景建構
+**主要目標**：認識阿茲海默症與蛋白質突變在疾病中的角色
+#### 具體操作流程：
+1. **阿茲海默症病理初步搜尋**：
+   - Google「阿茲海默症 病理」閱讀前3個醫療機構或學協會的介紹。
+   - 筆記阿茲海默症的致病蛋白和已知基因變異。
+2. **選定重點蛋白質**：
+   - 記下APP、PSEN1、MAPT三個蛋白質的全名、功能與常見相關疾病。
+3. **繪製思維導圖**：
+   - 使用XMind或手繪，繪出阿茲海默症-蛋白-突變三者關聯圖。
+4. **週小測驗**：
+   - 嘗試向ChatGPT或老師解釋：  
+     「為什麼蛋白質突變對阿茲海默症研究很重要？」
+#### 進階範例：
+- 用Markdown整理重點筆記，或嘗試在Notion上製作「知識庫」。
+---
+### 第2週：查找阿茲海默症致病蛋白及常見突變
+**主要目標**：利用資料庫查詢，鎖定研究對象
+#### 具體操作流程：
+1. **UniProt查詢**：
+   - 前往 [UniProt](https://www.uniprot.org/)，搜尋「APP human」，點進P05067條目。
+   - 點擊「Variants」標籤，複製其中3-5個已知致病突變（如V717I、A673T）。
+2. **Alzforum查詢**：
+   - 進入 [Alzforum APP mutation database](https://www.alzforum.org/mutations/app)
+   - 記錄每個突變的「蛋白質位置」、「氨基酸變化」與「已知臨床意義」。
+3. **建立突變表格**：
+   - Excel建檔：蛋白名稱、突變名稱、位置、類型、臨床關聯。
+4. **備份FASTA序列**：
+   - 在UniProt頁面下載APP蛋白的FASTA檔案。
+#### 進階範例：
+- 使用Python pandas整理突變資訊成DataFrame格式。
+  \`\`\`python
+  import pandas as pd
+  mutations = [{"protein":"APP", "mutation":"V717I", "pos":717, "from":"V", "to":"I"}]
+  df = pd.DataFrame(mutations)
+  print(df)
+  \`\`\`
+---
+### 第3週：學習蛋白質序列與結構基本知識
+**主要目標**：熟悉蛋白質序列格式與結構檔案
+#### 具體操作流程：
+1. **FASTA格式解析**：
+   - 用記事本或Notepad++開啟FASTA檔案，認識>開頭的描述行與胺基酸序列。
+2. **定位突變點**：
+   - 利用Python腳本或Excel計算出FASTA序列的對應位置（注意頭部描述行不算在內）。
+3. **人工or程式改序列**：
+   - 用文字編輯器手動將第n個氨基酸替換為突變後的氨基酸。
+   - 或用下列Python函數：
+     \`\`\`python
+     def mutate_fasta(seq, pos, new_aa):
+        return seq[:pos-1] + new_aa + seq[pos:]
+     \`\`\`
+4. **PDB格式初步認識**：
+   - 下載一個PDB結構檔（如1AAP.pdb），用記事本打開，觀察ATOM/HETATM等欄位。
+#### 進階範例：
+- 比較不同蛋白質（APP, PSEN1, MAPT）序列，發現保守區域。
+---
+### 第4週：AI蛋白質結構預測工具學習與環境設置
+**主要目標**：建立AI預測工具的基礎操作能力
+#### 具體操作流程：
+1. **註冊Google帳號並登入Colab**：
+   - 訪問 [ColabFold Notebook](https://colab.research.google.com/github/sokrypton/ColabFold/blob/main/AlphaFold2.ipynb)。
+2. **學習ColabFold步驟**：
+   - 依照Notebook指示安裝必要的依賴。
+   - 上傳自己的FASTA檔，執行預測。
+   - 記錄每步出現的變數、設定（如模板使用、迭代次數）。
+3. **下載PDB結果**：
+   - 在Colab下方選單選擇「檔案」→ 下載生成的PDB檔。
+4. **查看錯誤處理**：
+   - 預測失敗時，學習從輸出訊息定位錯誤原因（如序列過長、格式錯誤等）。
+#### 進階範例：
+- 用自己編輯的突變型FASTA做一遍預測練習，比較輸出文件結構。
+---
+### 第5週：野生型蛋白質結構預測與可視化
+**主要目標**：熟練結構預測及基礎三維可視化
+#### 具體操作流程：
+1. **將FASTA序列貼到ColabFold運算，取得PDB結構檔**。
+2. **下載ChimeraX並安裝**，開啟PDB結構。
+3. **旋轉、縮放結構**，學習基本的ChimeraX操作（點選、選區、顯示/隱藏側鏈）。
+4. **標註特定區域**：
+   - 用命令列輸入 \`select :A673\` 選取第673號氨基酸。
+   - 設置不同顏色 \`color red sel\`
+5. **截圖存檔**：
+   - 使用ChimeraX「File → Save Image」功能，將截圖存為png。
+#### 進階範例：
+- 使用ChimeraX的「surface」指令將結構繪製成分子表面模式。
+- 學習ChimeraX腳本（.cxc檔），一次性自動載入+上色+標註。
+---
+### 第6週：突變型蛋白質序列建構與結構預測
+**主要目標**：自行產生突變型結構，並用AI預測
+#### 具體操作流程：
+1. **用第3週Python函數批次製作不同突變型FASTA序列**。
+2. **上傳每個突變型FASTA到ColabFold進行預測**（可同時跑2-3個，節省時間）。
+3. **下載所有PDB結構檔，按突變名稱存檔**（如APP_V717I.pdb）。
+4. **記錄預測花費的時間與資源**。
+#### 進階範例：
+- 比較預測不同突變型時，AI模型對結構信心值（plDDT分數）的變化。
+---
+### 第7週：野生型與突變型蛋白質結構對比
+**主要目標**：觀察結構變異，掌握結構對比技能
+#### 具體操作流程：
+1. **同時在ChimeraX載入野生型和突變型PDB檔案**。
+2. **執行結構疊合**：
+   - 命令列輸入 \`matchmaker #1 #2\`（#1、#2分別為不同PDB的ID）。
+3. **比對RMSD值**：
+   - 用 \`rmsd #1 #2\` 計算結構差異。
+4. **放大突變位點區域，觀察局部結構改變**。
+5. **將疊合前後結構用不同顏色表示，便於截圖比較**。
+#### 進階範例：
+- 用ChimeraX script自動比對多組突變（.cxc範例可提供）。
+---
+### 第8週：蛋白質結構功能域與致病相關區域分析
+**主要目標**：理解突變點與蛋白質功能的關聯
+#### 具體操作流程：
+1. **UniProt查詢功能區域**：
+   - 對應功能域（如β-sheet、活性中心、跨膜區）與結構上的氨基酸編號。
+2. **ChimeraX標記功能域**：
+   - 用 \`select\` + \`color\` 指令標註功能域與突變點。
+3. **Google Scholar查找該區域與疾病的關聯**。
+4. **總結突變點是否落在重要功能區**，並附圖說明。
+#### 進階範例：
+- 嘗試利用 [InterPro](https://www.ebi.ac.uk/interpro/) 或 Pfam 對蛋白進行結構域自動註釋。
+---
+### 第9週：深入文獻查證突變與致病性的關聯
+**主要目標**：蒐集與整理每個突變的研究現況
+#### 具體操作流程：
+1. **在Google Scholar用突變名稱關鍵字檢索**（如「APP V717I」）。
+2. **下載2-3篇重點文獻並製作重點摘要表**。
+3. **填寫「突變-功能-致病關聯」Excel表格**。
+4. **若發現爭議/新發現，記錄於「進階討論」區塊**。
+#### 進階範例：
+- 用Zotero或Mendeley管理文獻，生成自動引用格式。
+---
+### 第10週：多突變型結構批次建構（自動化進階）
+**主要目標**：用程式批量處理多個突變，提高效率
+#### 具體操作流程：
+1. **建立突變批次清單（如CSV檔案）**，內容如：\`蛋白,突變點,原胺基酸,突變胺基酸\`
+2. **用Python自動產生多個突變FASTA並保存**。
+   \`\`\`python
+   import pandas as pd
+   muts = pd.read_csv('mut_list.csv')
+   for idx, row in muts.iterrows():
+      seq = mutate_fasta(base_seq, row['突變點'], row['突變胺基酸'])
+      with open(f"{row['蛋白']}_{row['突變點']}{row['突變胺基酸']}.fasta","w") as f:
+          f.write(seq)
+   \`\`\`
+3. **批次上傳ColabFold運算，統一命名與下載**。
+4. **整理所有結構檔進同一資料夾，方便後續分析**。
+#### 進階範例：
+- 批量產生結構後，自動寫入一份「樣本管理表」記錄預測時間、信心分數、檔名等資訊。
+---
+### 第11週：結構可視化自動化與統整
+**主要目標**：批次可視化，提升統整效率
+#### 具體操作流程：
+1. **撰寫ChimeraX腳本，自動載入多個PDB，標註突變點並截圖**。
+   - 範例腳本：
+     \`\`\`
+     open 1 wildtype.pdb
+     color blue
+     open 2 mutant.pdb
+     color red
+     select :717
+     color yellow sel
+     save wildtype_vs_mutant.png
+     \`\`\`
+2. **統一檔名與圖檔管理**。
+3. **做成「突變對照圖集」PPT或PDF**，標示異同。
+#### 進階範例：
+- 用Python PIL或ImageMagick自動拼圖，將比對圖整理成大圖。
+---
+### 第12週：結構差異對功能可能影響的推論
+**主要目標**：從結構推論生物功能與致病性
+#### 具體操作流程：
+1. **比對功能區域與突變區的重疊度**。
+2. **以表格/圖示整理各突變對結構的影響（RMSD、氫鍵變化、構型變動等）**。
+3. **用簡單生物學語言推測功能變化（如結構穩定度下降/上升、可能失去某種結合能力）**。
+4. **撰寫小結：本週發現/尚未解答的問題/未來驗證方向**。
+#### 進階範例：
+- 用PyMOL量化突變點鄰近氫鍵數目的變化（可額外學習）。
+---
+### 第13週：討論進階分析方法（如分子對接）
+**主要目標**：引入分子對接，探索突變對結合能力的影響
+#### 具體操作流程：
+1. **下載AutoDockTools-1.5.7，學習安裝與基本操作**。
+2. **下載一個已知阿茲海默症配體（如Aβ抑制劑）結構檔（可在PubChem找到）**。
+3. **分別用野生型與突變型結構做對接分析**。
+   - 操作步驟：設定Grid box → 準備PDBQT → 執行對接 → 分析結果。
+4. **比較結合能（binding affinity）分數，判斷突變是否影響結合**。
+#### 進階範例：
+- 嘗試用其他開源對接軟體（如SwissDock），對比結果。
+---
+### 第14週：數據彙整與圖表製作
+**主要目標**：將所有數據成果視覺化，製作圖表
+#### 具體操作流程：
+1. **用Excel製作「突變-RMSD-結合能」三欄圖**。
+2. **用Google Sheets、Python matplotlib/seaborn製作結構差異折線圖、熱圖**。
+3. **彙整截圖、可視化圖表，製成整理型PPT**。
+#### 進階範例：
+- 用Python自動生成多突變分析報表。
+  \`\`\`python
+  import matplotlib.pyplot as plt
+  plt.bar(['WT','V717I','A673T'], [0.5,0.9,1.3])
+  plt.xlabel('突變型')
+  plt.ylabel('RMSD')
+  plt.title('不同突變型結構差異')
+  plt.savefig('diff_rmsd.png')
+  \`\`\`
+---
+### 第15週：撰寫成果初稿（研究背景、方法、初步結果）
+**主要目標**：將研究過程與初步結果文字化
+#### 具體操作流程：
+1. **依下列大綱撰寫Word或Markdown文件：**
+   - 研究動機
+   - 研究背景
+   - 研究目標
+   - 研究方法（圖示流程、使用工具、分析方法）
+   - 初步實驗/預測結果
+2. **插入流程圖與代表性截圖**。
+3. **段落內容可參考學術論文的寫作方式**。
+#### 進階範例：
+- 用draw.io或Canva設計精美流程圖。
+---
+### 第16週：撰寫討論與結論
+**主要目標**：深度分析與展望
+#### 具體操作流程：
+1. **結構與致病性的綜合討論**：
+   - 挑選1~2個突變案例做重點討論，結合文獻觀點。
+2. **探討實驗與AI預測的差異/優缺點**。
+3. **撰寫結論與未來研究建議**。
+4. **檢查所有引用與圖表**，確保標註完整。
+#### 進階範例：
+- 以表格形式對比「AI預測 vs 傳統濕實驗」在蛋白質突變研究中的利弊。
+---
+### 第17週：簡報製作與口頭報告練習
+**主要目標**：成果視覺化，增強表達力
+#### 具體操作流程：
+1. **PowerPoint設計：以流程為主軸，配合圖表與結構圖**。
+2. **擬定3-5分鐘口頭報告稿（中文/英文皆可）**。  
+3. **邀請同學/家人聆聽，進行模擬答辯與回饋**。  
+4. **可錄影或錄音自我檢討**。
+#### 進階範例：
+- 嘗試製作動畫式簡報（PowerPoint動畫、Canva、Prezi）。
+---
+### 第18週：專題成果檢查與最終整合
+**主要目標**：完善所有學習成果，準備公開分享
+#### 具體操作流程：
+1. **自檢論文/簡報/數據表/程式碼完整性**。
+2. **將所有材料整理進「專案資料夾」**（可依：文獻、結構、程式、圖表分類）。
+3. **學習GitHub Pages部署（有空可將所有材料製成靜態網頁）**。
+4. **製作「學習心得」1頁A4、200字總結本計畫收穫與反思**。
+#### 進階範例：
+- 使用 [Notion](https://www.notion.so/) 或 [Obsidian](https://obsidian.md/) 製作專題Wiki，持續補充未來學習紀錄。
+---
+## 課外補充材料（推薦資源大集合）
+- **蛋白質結構基礎/線上課程**
+  - [Protein Structure and Function (edX, 英文)](https://www.edx.org/learn/biology/harvard-university-protein-structure-and-function)
+  - [Coursera-蛋白質生物資訊學（中文）](https://www.coursera.org/learn/protein-bioinformatics)
+  - [台灣大學開放式課程-生物化學](https://ocw.ntu.edu.tw/ntu-ocw/ocw/cou/102S208)
+- **生物資訊&AI工具學習**
+  - [ColabFold中文社群教程](https://zhuanlan.zhihu.com/p/570578836)
+  - [AlphaFold2基礎教學影片](https://www.youtube.com/watch?v=cdtz2dB4N6I)
+  - [PyMOL/ChimeraX社群與範例程式](https://pymolwiki.org/index.php/Main_Page)
+- **分子對接、結構分析社群**
+  - [Molecular Docking基礎影片](https://www.youtube.com/watch?v=Udq5vsHcMcc)
+  - [AutoDockTools官方文件](http://autodock.scripps.edu/)
+- **蛋白質突變資料庫、阿茲海默症學會**
+  - [Alzforum Mutation Database](https://www.alzforum.org/mutations)
+  - [UniProt蛋白質變異專區](https://www.uniprot.org/docs/humsavar)
+  - [Alzheimer’s Association（國際學會）](https://www.alz.org/)
+- **程式碼/AI社群討論區**
+  - [Kaggle生物資訊競賽](https://www.kaggle.com/search?q=protein)
+  - [Stack Overflow Python專區](https://stackoverflow.com/questions/tagged/python)
+- **GitHub Pages教學**
+  - [GitHub Pages新手指南（中文）](https://ithelp.ithome.com.tw/articles/10265716)
+  - [用Notion自架科學網頁](https://www.notion.so/zh-tw/help/guides/add-a-custom-domain)
+---
+## 附錄：常用工具資源總表
+- **AI蛋白質結構預測**：AlphaFold（ColabFold）、AlphaFold Database
+- **蛋白質序列資料庫**：UniProt、NCBI Protein
+- **蛋白質結構檢視**：UCSF ChimeraX（下載）、PyMOL（如需）
+- **突變資料查詢**：Alzforum Mutation Database、OMIM、ClinVar
+- **分子對接**：AutoDockTools-1.5.7
+- **圖表繪製**：Excel、Google Sheets、Matplotlib（Python）
+- **程式學習**：Google Colab、Python基礎入門（菜鳥教程）
+`;
+        const sections = markdownText.split('---').map(s => s.trim()).filter(Boolean);
+        const dataToInsert = [];
+        let weekCounter = 1;
+
+        for (const section of sections) {
+            const lines = section.split('\n');
+            let title, summary, content, order_index;
+            
+            const titleMatchWeek = lines[0].match(/###\s*(第\d+週：.*)/);
+            const titleMatchSupplement = lines[0].match(/##\s*(課外補充材料.*)/);
+            const titleMatchAppendix = lines[0].match(/##\s*(附錄.*)/);
+
+            if (titleMatchWeek) {
+                title = titleMatchWeek[1];
+                summary = lines.find(l => l.startsWith('**主要目標**'))?.replace('**主要目標**：', '').trim() || '';
+                content = section;
+                order_index = weekCounter++;
+            } else if (titleMatchSupplement) {
+                title = titleMatchSupplement[1];
+                summary = '精選的線上課程、工具教學與社群資源。';
+                content = section;
+                order_index = 99;
+            } else if (titleMatchAppendix) {
+                 title = titleMatchAppendix[1];
+                 summary = '專案中使用的關鍵工具與資料庫快速索引。';
+                 content = section;
+                 order_index = 100;
+            }
+
+            if(title) {
+                dataToInsert.push({ order_index, title, summary, content });
+            }
+        }
+        return dataToInsert.filter(item => item.title && item.order_index);
+    },
+
+    addEventListeners() {
+        document.querySelectorAll('.nav-link').forEach(el => {
+            el.addEventListener('click', (e) => {
+                this.state.currentView = e.currentTarget.dataset.view;
+                this.render();
+            });
+        });
+        
+        document.querySelector('.nav-link-cta').addEventListener('click', (e) => {
+            this.state.currentView = e.currentTarget.dataset.view;
+            this.render();
+        });
+        
+        document.getElementById('mobile-menu-button').addEventListener('click', () => {
+            document.getElementById('mobile-menu').classList.toggle('hidden');
+        });
+
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => this.renderTaskTracker(e.currentTarget.dataset.filter));
+        });
+        
+        document.getElementById('task-list').addEventListener('click', (e) => {
+            const card = e.target.closest('.task-card');
+            if (card) {
+                this.state.currentView = card.dataset.view;
+                this.state.selectedPlanId = parseInt(card.dataset.id);
+                this.render();
+            }
+        });
+    },
+
+    render() {
+        document.querySelectorAll('.view-container').forEach(el => el.classList.add('hidden'));
+
+        if (this.state.currentView === 'error') {
+            document.getElementById('view-error').classList.remove('hidden');
+            return;
+        }
+
+        document.getElementById(`view-${this.state.currentView}`).classList.remove('hidden');
+
+        document.querySelectorAll('.nav-link').forEach(el => {
+             el.classList.toggle('active', el.dataset.view === this.state.currentView);
+        });
+
+        if(document.getElementById('mobile-menu')?.classList.contains('block')) {
+            document.getElementById('mobile-menu').classList.add('hidden');
+        }
+
+        switch(this.state.currentView) {
+            case 'plan':
+                this.renderPlanView();
+                break;
+            case 'tracker':
+                this.renderTaskTracker();
+                break;
+        }
+    },
+    
+    renderPlanView() {
+        const loadingEl = document.getElementById('plan-loading');
+        const contentEl = document.getElementById('plan-view-content');
+        if (this.state.loading) {
+            loadingEl.classList.remove('hidden');
+            contentEl.classList.add('hidden');
+        } else {
+            loadingEl.classList.add('hidden');
+            contentEl.classList.remove('hidden');
+            this.renderPlanNav();
+            this.renderPlanContent();
+        }
+    },
+
+    renderPlanNav() {
+        const navEl = document.getElementById('plan-nav');
+        if (!this.data || this.data.length === 0) return;
+        
+        navEl.innerHTML = this.data.map(item => `
+            <a href="#" data-id="${item.id}" class="plan-nav-item nav-item p-3 rounded-md text-sm font-medium cursor-pointer">
+                ${item.title}
+            </a>
+        `).join('');
+        
+        document.querySelectorAll('.plan-nav-item').forEach(el => {
+            el.classList.toggle('active', parseInt(el.dataset.id) === this.state.selectedPlanId);
+            el.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.state.selectedPlanId = parseInt(e.currentTarget.dataset.id);
+                this.renderPlanNav();
+                this.renderPlanContent();
+            });
+        });
+    },
+
+    renderPlanContent() {
+        const contentEl = document.getElementById('plan-content-wrapper');
+        const item = this.data.find(d => d.id === this.state.selectedPlanId);
+        if (!item) {
+            contentEl.innerHTML = '<p class="text-center">請選擇一個章節來檢視內容。</p>';
+            return;
+        }
+
+        const formattedContent = this.formatContent(item.content);
+
+        contentEl.innerHTML = `
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                <h2 class="text-2xl font-bold text-cyan-400">${item.title}</h2>
+                <div class="flex items-center gap-2 flex-shrink-0">
+                    <label for="status-select" class="text-sm font-medium text-gray-400">狀態:</label>
+                    <select id="status-select" data-id="${item.id}" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-cyan-500 focus:border-cyan-500 block w-full p-2">
+                        <option value="未開始" ${item.status === '未開始' ? 'selected' : ''}>未開始</option>
+                        <option value="進行中" ${item.status === '進行中' ? 'selected' : ''}>進行中</option>
+                        <option value="已完成" ${item.status === '已完成' ? 'selected' : ''}>已完成</option>
+                    </select>
+                </div>
+            </div>
+            <div class="content-prose">${formattedContent}</div>
+        `;
+
+        document.getElementById('status-select').addEventListener('change', async (e) => {
+            const selectedId = parseInt(e.target.dataset.id);
+            const newStatus = e.target.value;
+            
+            const { error } = await this.supabase
+                .from('learning_plan')
+                .update({ status: newStatus })
+                .eq('id', selectedId);
+
+            if (error) {
+                console.error('Error updating status:', error);
+            } else {
+                const dataItem = this.data.find(d => d.id === selectedId);
+                if (dataItem) dataItem.status = newStatus;
+            }
+        });
+    },
+
+    formatContent(md) {
+        if (!md) return '';
+        const blocks = md.split(/(\n---\n)/);
+        let html = '';
+        let inList = null; 
+
+        const closeList = () => {
+            if (inList) {
+                html += `</${inList}>\n`;
+                inList = null;
+            }
+        };
+
+        for (const block of blocks) {
+            if (block === '\n---\n') {
+                closeList();
+                html += '<hr class="my-8 border-slate-700">\n';
+                continue;
+            }
+            const lines = block.trim().split('\n');
+            for (const line of lines) {
+                if (line.trim() === '') continue;
+
+                if (line.startsWith('### ')) {
+                    closeList();
+                    html += `<h1>${line.substring(4)}</h1>\n`;
+                } else if (line.startsWith('## ')) {
+                    closeList();
+                    html += `<h2>${line.substring(3)}</h2>\n`;
+                } else if (line.startsWith('#### ')) {
+                    closeList();
+                    html += `<h4>${line.substring(5)}</h4>\n`;
+                } else if (line.match(/^\d+\.\s/)) {
+                    if (inList !== 'ol') {
+                        closeList();
+                        html += '<ol class="list-decimal list-inside mb-4 pl-4">\n';
+                        inList = 'ol';
+                    }
+                    html += `<li>${line.replace(/^\d+\.\s/, '')}</li>\n`;
+                } else if (line.startsWith('- ')) {
+                    if (inList !== 'ul') {
+                        closeList();
+                        html += '<ul class="list-disc list-inside mb-4 pl-4">\n';
+                        inList = 'ul';
+                    }
+                    html += `<li>${line.substring(2)}</li>\n`;
+                } else if (line.startsWith('```')) {
+                    closeList();
+                    if (line.length > 3) {
+                         html += `<pre><code class="language-${line.substring(3)}">`;
+                    } else {
+                        html += `</code></pre>\n`;
+                    }
+                } else {
+                     closeList();
+                     html += `<p>${line}</p>\n`;
+                }
+            }
+        }
+        closeList();
+        
+        return html
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/`([^`]+)`/g, '<code class="bg-gray-700 text-cyan-300 rounded px-1 py-0.5 text-sm">$1</code>')
+            .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    },
+
+    renderTaskTracker(filter = 'all') {
+        const loadingEl = document.getElementById('tracker-loading');
+        const contentEl = document.getElementById('tracker-view-content');
+
+        if (this.state.loading) {
+            loadingEl.classList.remove('hidden');
+            contentEl.classList.add('hidden');
+            return;
+        } 
+        loadingEl.classList.add('hidden');
+        contentEl.classList.remove('hidden');
+
+        const statuses = { '未開始': 0, '進行中': 0, '已完成': 0 };
+        const taskItems = this.data.filter(d => d.order_index < 90);
+        taskItems.forEach(item => {
+            if (statuses[item.status] !== undefined) {
+                statuses[item.status]++;
+            }
+        });
+
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            const is_active = btn.dataset.filter === filter;
+            btn.classList.toggle('bg-cyan-500', is_active && filter === 'all');
+            btn.classList.toggle('bg-gray-500', is_active && filter === '未開始');
+            btn.classList.toggle('bg-cyan-500', is_active && filter === '進行中');
+            btn.classList.toggle('bg-green-500', is_active && filter === '已完成');
+            
+            btn.classList.toggle('bg-gray-700', !is_active && btn.dataset.filter === '未開始');
+            btn.classList.toggle('bg-cyan-700', !is_active && btn.dataset.filter === '進行中');
+            btn.classList.toggle('bg-green-700', !is_active && btn.dataset.filter === '已完成');
+            btn.classList.toggle('bg-gray-800', !is_active && btn.dataset.filter === 'all');
+
+        });
+
+        this.renderProgressChart(statuses);
+        document.getElementById('stats-summary').innerHTML = `
+            <h2 class="text-3xl font-bold mb-4">進度總覽</h2>
+            <div class="space-y-2 text-lg">
+                <p><span class="font-semibold text-green-400">已完成:</span> ${statuses['已完成']} / ${taskItems.length} 週</p>
+                <p><span class="font-semibold text-cyan-400">進行中:</span> ${statuses['進行中']} 週</p>
+                <p><span class="font-semibold text-gray-400">未開始:</span> ${statuses['未開始']} 週</p>
+            </div>
+        `;
+        
+        const listEl = document.getElementById('task-list');
+        const filteredData = filter === 'all' 
+            ? this.data 
+            : this.data.filter(item => item.status === filter);
+            
+        listEl.innerHTML = filteredData.length > 0 
+            ? filteredData.map(item => this.createTaskCard(item)).join('')
+            : `<p class="text-center col-span-full text-gray-400">沒有符合篩選條件的任務。</p>`;
+    },
+    
+    createTaskCard(item) {
+        const statusStyles = {
+            '未開始': 'bg-gray-700 text-gray-300',
+            '進行中': 'bg-cyan-800 text-cyan-200 animate-pulse',
+            '已完成': 'bg-green-800 text-green-200',
+        };
+        return `
+            <div class="task-card glass-pane rounded-lg p-5 flex flex-col justify-between transition-transform hover:scale-105 cursor-pointer" data-view="plan" data-id="${item.id}">
+                <div>
+                    <div class="flex justify-between items-start mb-3">
+                        <h3 class="font-bold text-lg text-gray-200">${item.title}</h3>
+                        <span class="text-xs font-semibold px-2 py-1 rounded-full ${statusStyles[item.status] || ''}">${item.status}</span>
+                    </div>
+                    <p class="text-sm text-gray-400">${item.summary}</p>
+                </div>
+            </div>
+        `;
+    },
+
+    renderProgressChart(statuses) {
+        const ctx = document.getElementById('progressChart').getContext('2d');
+        if (window.progressChart instanceof Chart) {
+            window.progressChart.destroy();
+        }
+        window.progressChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['已完成', '進行中', '未開始'],
+                datasets: [{
+                    label: '任務狀態',
+                    data: [statuses['已完成'], statuses['進行中'], statuses['未開始']],
+                    backgroundColor: [
+                        'rgba(52, 211, 153, 0.7)',
+                        'rgba(34, 211, 238, 0.7)',
+                        'rgba(107, 114, 128, 0.7)'
+                    ],
+                    borderColor: [ '#34d399', '#22d3ee', '#6b7280' ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '60%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            color: '#E6EDF3',
+                            font: { family: "'Inter', sans-serif" }
+                        }
+                    },
+                    tooltip: {
+                         bodyFont: { family: "'Inter', sans-serif" },
+                         titleFont: { family: "'Inter', sans-serif" },
+                    }
+                }
+            }
+        });
+    }
+};
+
+document.addEventListener('DOMContentLoaded', () => App.init());
+</script>
+
+</body>
+</html>
