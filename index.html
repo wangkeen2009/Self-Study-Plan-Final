@@ -18,7 +18,7 @@
         - Text: #E6EDF3 (Slate 200)
         - Accent: #22D3EE (Cyan 400)
         - Secondary Accent: #A5B4FC (Indigo 300)
-        - Status Colors: Not Started (Gray), In Progress (Cyan), Completed (Green)
+        - Status Colors: Not Started (Gray), In Progress (Cyan), Completed (Yellow)
     -->
     <!-- 
     Application Structure Plan: The application is structured as a Single-Page Application (SPA) with three distinct, switchable views: "首頁" (Home), "學習規劃" (Learning Plan), and "任務追蹤" (Task Tracking). This task-oriented design is chosen for usability, separating the high-level introduction from the detailed curriculum and progress monitoring.
@@ -162,7 +162,7 @@
                          <button data-filter="all" class="filter-btn bg-cyan-500 text-white py-2 px-4 rounded-full text-sm font-semibold">全部</button>
                          <button data-filter="未開始" class="filter-btn bg-gray-600 hover:bg-gray-500 text-white py-2 px-4 rounded-full text-sm font-semibold transition-colors">未開始</button>
                          <button data-filter="進行中" class="filter-btn bg-cyan-600 hover:bg-cyan-500 text-white py-2 px-4 rounded-full text-sm font-semibold transition-colors">進行中</button>
-                         <button data-filter="已完成" class="filter-btn bg-green-600 hover:bg-green-500 text-white py-2 px-4 rounded-full text-sm font-semibold transition-colors">已完成</button>
+                         <button data-filter="已完成" class="filter-btn bg-yellow-600 hover:bg-yellow-500 text-black py-2 px-4 rounded-full text-sm font-semibold transition-colors">已完成</button>
                     </div>
 
                     <div id="task-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -866,11 +866,11 @@ const App = {
             btn.classList.toggle('bg-cyan-500', is_active && filter === 'all');
             btn.classList.toggle('bg-gray-500', is_active && filter === '未開始');
             btn.classList.toggle('bg-cyan-500', is_active && filter === '進行中');
-            btn.classList.toggle('bg-green-500', is_active && filter === '已完成');
+            btn.classList.toggle('bg-yellow-500', is_active && filter === '已完成');
             
             btn.classList.toggle('bg-gray-700', !is_active && btn.dataset.filter === '未開始');
             btn.classList.toggle('bg-cyan-700', !is_active && btn.dataset.filter === '進行中');
-            btn.classList.toggle('bg-green-700', !is_active && btn.dataset.filter === '已完成');
+            btn.classList.toggle('bg-yellow-700', !is_active && btn.dataset.filter === '已完成');
             btn.classList.toggle('bg-gray-800', !is_active && btn.dataset.filter === 'all');
 
         });
@@ -879,7 +879,7 @@ const App = {
         document.getElementById('stats-summary').innerHTML = `
             <h2 class="text-3xl font-bold mb-4">進度總覽</h2>
             <div class="space-y-2 text-lg">
-                <p><span class="font-semibold text-green-400">已完成:</span> ${statuses['已完成']} / ${taskItems.length} 週</p>
+                <p><span class="font-semibold text-yellow-400">已完成:</span> ${statuses['已完成']} / ${taskItems.length} 週</p>
                 <p><span class="font-semibold text-cyan-400">進行中:</span> ${statuses['進行中']} 週</p>
                 <p><span class="font-semibold text-gray-400">未開始:</span> ${statuses['未開始']} 週</p>
             </div>
@@ -899,7 +899,7 @@ const App = {
         const statusStyles = {
             '未開始': 'bg-gray-700 text-gray-300',
             '進行中': 'bg-cyan-800 text-cyan-200 animate-pulse',
-            '已完成': 'bg-green-800 text-green-200',
+            '已完成': 'bg-yellow-800 text-yellow-200',
         };
         return `
             <div class="task-card glass-pane rounded-lg p-5 flex flex-col justify-between transition-transform hover:scale-105 cursor-pointer" data-view="plan" data-id="${item.id}">
@@ -927,11 +927,15 @@ const App = {
                     label: '任務狀態',
                     data: [statuses['已完成'], statuses['進行中'], statuses['未開始']],
                     backgroundColor: [
-                        'rgba(52, 211, 153, 0.7)',
-                        'rgba(34, 211, 238, 0.7)',
-                        'rgba(107, 114, 128, 0.7)'
+                        'rgba(250, 204, 21, 0.7)', // Yellow
+                        'rgba(34, 211, 238, 0.7)', // Cyan
+                        'rgba(107, 114, 128, 0.7)'  // Gray
                     ],
-                    borderColor: [ '#34d399', '#22d3ee', '#6b7280' ],
+                    borderColor: [ 
+                        '#facc15', // Yellow
+                        '#22d3ee', // Cyan
+                        '#6b7280'  // Gray
+                    ],
                     borderWidth: 1
                 }]
             },
@@ -961,4 +965,4 @@ document.addEventListener('DOMContentLoaded', () => App.init());
 </script>
 
 </body>
-</html>
+</ht
